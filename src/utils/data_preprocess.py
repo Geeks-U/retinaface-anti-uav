@@ -1,5 +1,10 @@
 import os
+import copy
+import warnings
+
 import cv2
+import numpy as np
+
 
 def convert_all_videos_to_frames(root_dir):
     """
@@ -40,5 +45,55 @@ def convert_all_videos_to_frames(root_dir):
 
     print("全部视频处理完成。")
 
+
+def generate_triplet_sample(samples: list, frame_gap: int=2):
+    triplet_samples = []
+    for v in samples:
+        frame_start_index = 2 * frame_gap
+        if frame_start_index > len(v):
+            warnings.warn(
+                f"样本帧数不足：需要至少 {frame_start_index + 1} 帧，但当前只有 {len(v)} 帧。",
+                stacklevel=2
+            )
+            continue
+        for i in range(frame_start_index, len(v)):
+            pathList = [v[i - 2*frame_gap][0], v[i - frame_gap][0], v[i][0]]
+            triplet_samples.append([pathList, copy.deepcopy(v[i][1])])
+
+    return triplet_samples
+
+
+def is_pseudo_color_image_from_path(path: str, threshold: float = 0.98) -> bool:
+    """
+    从图像路径判断是否为伪色彩图像（RGB 三通道是否高度相关）
+
+    参数:
+        path: str，图像文件路径
+        threshold: float，通道之间的相关性阈值，默认 0.98
+
+    返回:
+        bool: 是否为伪色彩图像
+    """
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"文件不存在: {path}")
+
+    img = cv2.imread(path)  # BGR 读取
+    if img is None:
+        raise ValueError(f"无法读取图像: {path}")
+
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # 转换为 RGB
+    if img.ndim != 3 or img.shape[2] != 3:
+        raise ValueError("图像不是 RGB 三通道")
+
+    r, g, b = img[:, :, 0], img[:, :, 1], img[:, :, 2]
+    rg = np.corrcoef(r.ravel(), g.ravel())[0, 1]
+    rb = np.corrcoef(r.ravel(), b.ravel())[0, 1]
+    gb = np.corrcoef(g.ravel(), b.ravel())[0, 1]
+
+    is_pseudo = rg > threshold and rb > threshold and gb > threshold
+    return is_pseudo
+
+
 if __name__ == "__main__":
-    convert_all_videos_to_frames(r'D:\Data\deeplearning\datasets\Anti-UAV\test')
+    # convert_all_videos_to_frames(r'D:\Data\deeplearning\datasets\Anti-UAV\test')
+    print(is_pseudo_color_image_from_path(r'D:\Data\deeplearning\datasets\Anti-UAV\demo\infrared\infraredI0007.jpg'))
