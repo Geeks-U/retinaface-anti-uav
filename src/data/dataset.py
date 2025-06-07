@@ -134,7 +134,6 @@ class CustomDataset(Dataset):
             bbox = np.array([[0, 0, 0, 0, 0]], dtype=np.float32)
         bbox[:, [0, 2]] /= float(W_ori)
         bbox[:, [1, 3]] /= float(H_ori)
-        print(clip.shape)
 
         return clip, bbox
 

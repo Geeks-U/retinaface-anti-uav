@@ -47,8 +47,7 @@ class MobileNetV2(nn.Module):
             for param in self.model.parameters():
                 param.requires_grad = False
 
-    def forward(self, x):  # x.shape = [B, 3, H, W]，其中3是“时间帧数”
-        x = x.unsqueeze(1)  # [B, 1, 3, H, W]
+    def forward(self, x):  # x.shape = [B, 1, 3, H, W]，其中3是“时间帧数”
         x = self.conv3d(x)  # [B, 3, 1, H, W]
         x = x.squeeze(2)    # [B, 3, H, W] -> 变成 Mobilenet 可接受的输入
 
