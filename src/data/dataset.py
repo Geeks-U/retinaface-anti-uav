@@ -195,5 +195,6 @@ def draw_bbox_r_channel(image_path, bbox, color=255, thickness=2):
 if __name__ == '__main__':
     res = CustomDataset()
     print(len(res))
-    print(res[0])
+    i, l = res[0]
+    print(i.shape)
     draw_bbox_r_channel(res.samples[1000][0], res.samples[1000][1][0][:4])
