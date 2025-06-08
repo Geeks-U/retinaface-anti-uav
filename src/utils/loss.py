@@ -49,15 +49,25 @@ class CustomLoss(nn.Module):
         conf_t  = torch.LongTensor(num, num_priors)
 
         for idx in range(num):
-            # 获得真实框与标签
-            truths = targets[idx][:, :4].data
-            labels = targets[idx][:, -1].data
+            target = targets[idx]
+            truths = target[:, :4].data
+            labels = target[:, -1].data
 
-            # 获得先验框 张量的原始数据。priors.data 返回一个不包含梯度信息的张量视图
-            defaults = priors.data
-            #   利用真实框和先验框进行匹配。
-            loc_t[idx], conf_t[idx] = match_center_anchor_to_gt_box_percent(defaults, truths, labels,
-                                                  self.threshold, self.variance)
+            # 判断是否全是无效框（宽高<=0 或全零）
+            valid_mask = (truths[:, 2] > truths[:, 0]) & (truths[:, 3] > truths[:, 1])
+            if valid_mask.sum() == 0:
+                # 全是无效框，全部标签设为背景 不进入match过程以免报错
+                conf_t[idx].fill_(0)
+                loc_t[idx].zero_()
+                continue
+
+            # 有有效框，挑选有效框匹配
+            truths = truths[valid_mask]
+            labels = labels[valid_mask]
+
+            loc_t[idx], conf_t[idx] = match_center_anchor_to_gt_box_percent(
+                priors.data, truths, labels, self.threshold, self.variance
+            )
 
         #--------------------------------------------------#
         #   转化成Variable

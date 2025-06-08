@@ -8,7 +8,7 @@ from src.data.dataset import CustomDataset, detection_collate
 cfg_datamodule_default = {
     'val_split': 0.1,
     'batch_size': 32,
-    'num_workers': 4,
+    'num_workers': 2,
     'pin_memory': True
 }
 
@@ -30,7 +30,7 @@ class DataModule(pl.LightningDataModule):
     def setup(self, stage=None, cfg_fit=None, cfg_test=None):
         if stage in (None, 'fit'):
             # 训练数据（启用 augment）
-            cfg_dataset = {'augment': True}
+            cfg_dataset = {'augment': True, 'mode': 'train'}
             cfg_dataset.update(cfg_fit)
             full_dataset = CustomDataset(cfg_dataset=cfg_dataset)
 
@@ -49,7 +49,7 @@ class DataModule(pl.LightningDataModule):
 
         if stage in (None, 'test'):
             # 测试数据（禁用 augment）
-            cfg_dataset = {'augment': False}
+            cfg_dataset = {'augment': False, 'mode': 'test'}
             cfg_dataset.update(cfg_test)
             self.test_dataset = CustomDataset(cfg_dataset=cfg_dataset)
 

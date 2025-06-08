@@ -162,10 +162,19 @@ def calc_target_bbox(truth_corner_box, prior_center_box, variances):
     return torch.cat([delta_xy, delta_wh], 1)
 
 def calc_raw_bbox(loc, priors, variances):
-    boxes = torch.cat((priors[:, :2] + loc[:, :2] * variances[0] * priors[:, 2:],
-                    priors[:, 2:] * torch.exp(loc[:, 2:] * variances[1])), 1)
-    boxes[:, :2] -= boxes[:, 2:] / 2
-    boxes[:, 2:] += boxes[:, :2]
+    # [N, 4] → [1, N, 4] → 自动广播成 [B, N, 4]
+    priors = priors.unsqueeze(0).expand(loc.size(0), -1, -1)
+
+    # 解码 boxes（中心坐标和宽高）
+    boxes = torch.cat((
+        priors[:, :, :2] + loc[:, :, :2] * variances[0] * priors[:, :, 2:],  # center x, y
+        priors[:, :, 2:] * torch.exp(loc[:, :, 2:] * variances[1])          # width, height
+    ), dim=2)
+
+    # 转换为 [xmin, ymin, xmax, ymax]
+    boxes[:, :, :2] -= boxes[:, :, 2:] / 2
+    boxes[:, :, 2:] += boxes[:, :, :2]
+
     return boxes
 
 # (Δw, Δh) = (match_landm_t - (prior_x, prior_y)) / (prior_w, prior_h)
@@ -193,31 +202,35 @@ def calc_raw_landm(pre, priors, variances):
                         ), dim=1)
     return landms
 
+import numpy as np
 from torchvision.ops import nms
 
-def non_max_suppression(detection, conf_thres=0.5, nms_thres=0.3):
-    #------------------------------------------#
-    #   找出该图片中得分大于门限函数的框。
-    #   在进行重合框筛选前就
-    #   进行得分的筛选可以大幅度减少框的数量。
-    #------------------------------------------#
-    mask        = detection[:, 4] >= conf_thres
-    detection   = detection[mask]
+def non_max_suppression(detections: torch.Tensor, conf_thres=0.5, nms_thres=0.3):
+    """
+    detections: Tensor [B, N, 5] -> (x1, y1, x2, y2, score)
+    return: List[np.ndarray] 每个元素是一个图片的筛选后的结果
+    """
+    assert detections.ndim == 3 and detections.shape[2] == 5, "Expect input shape [B, N, 5]"
 
-    if len(detection) <= 0:
-        return []
+    batch_size = detections.shape[0]
+    results = []
 
-    #------------------------------------------#
-    #   使用官方自带的非极大抑制会速度更快一些！
-    #------------------------------------------#
-    keep = nms(
-        detection[:, :4],
-        detection[:, 4],
-        nms_thres
-    )
-    best_box = detection[keep]
+    for b in range(batch_size):
+        detection = detections[b]  # shape: [N, 5]
 
-    return best_box.cpu().numpy()
+        mask = detection[:, 4] >= conf_thres
+        detection = detection[mask]
+
+        if detection.shape[0] == 0:
+            results.append(np.zeros((0, 5), dtype=np.float32))  # 空结果
+            continue
+
+        keep = nms(detection[:, :4], detection[:, 4], nms_thres)
+        best_box = detection[keep]
+
+        results.append(best_box.detach().cpu().numpy())
+
+    return results  # list of numpy arrays of shape [M, 5]
 
 # 测试代码 --------------------------------------------------
 if __name__ == "__main__":

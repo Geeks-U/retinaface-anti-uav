@@ -36,27 +36,17 @@ class MobileNetV2(nn.Module):
         weights = models.MobileNet_V2_Weights.DEFAULT if self.cfg['pretrained'] else None
         self.model = models.mobilenet_v2(weights=weights)
 
-        # 提取时间维度信息，输出3通道以匹配mobilenet输入
-        self.conv3d = nn.Sequential(
-            nn.Conv3d(in_channels=1, out_channels=3, kernel_size=(3, 3, 3), padding=(0, 1, 1)),  # T=3 -> 1
-            nn.BatchNorm3d(3),
-            nn.ReLU(inplace=True)
-        )
-
         if self.cfg['frozen']:
             for param in self.model.parameters():
                 param.requires_grad = False
 
-    def forward(self, x):  # x.shape = [B, 1, 3, H, W]，其中3是“时间帧数”
-        x = self.conv3d(x)  # [B, 3, 1, H, W]
-        x = x.squeeze(2)    # [B, 3, H, W] -> 变成 Mobilenet 可接受的输入
-
-        # 继续走 mobilenet_v2
+    def forward(self, x):  # x.shape = [B, 3, H, W]，3通道已经是差分和当前帧拼接
         outputs = {}
         out_indices = self.cfg['out_layers']
         out_names = self.cfg['out_names']
         name_map = dict(zip(out_indices, out_names))
         max_layer = max(out_indices)
+
         for idx, layer in enumerate(self.model.features):
             x = layer(x)
             if idx in name_map:
@@ -64,6 +54,7 @@ class MobileNetV2(nn.Module):
             if idx >= max_layer:
                 break
         return {name: outputs[name] for name in out_names}
+
 
 # 工厂函数
 def build_backbone(model_name: str, cfg_backbone=None) -> nn.Module:

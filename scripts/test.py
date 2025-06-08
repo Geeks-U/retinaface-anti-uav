@@ -46,23 +46,13 @@ if __name__ == '__main__':
     # 回到项目根目录 （假设脚本在 scripts 目录下）
     base_dir = os.path.dirname(os.path.dirname(current_file))
 
-    model_path = os.path.join(base_dir, 'weights', 'model_20250607_105055_last.pth')
-    image1 = os.path.join(base_dir, 'src', 'images', 'fusedI0004.jpg')
-    image2 = os.path.join(base_dir, 'src', 'images', 'fusedI0018.jpg')
-    image3 = os.path.join(base_dir, 'src', 'images', 'fusedI0079.jpg')
-    image4 = os.path.join(base_dir, 'src', 'images', 'fusedI0264.jpg')
-
+    model_path = os.path.join(base_dir, 'weights', 'model_20250608_130432_best.pth')
     cfg_tester = {
         'model_path': model_path,
-        'input_image_size': [960, 960]
+        'input_image_size': [640, 640]
     }
 
+    data_dir = r'D:\Data\deeplearning\datasets\Anti-UAV\val\20190925_152412_1_3'
     test = Tester(cfg_tester=cfg_tester)
-    test.detect_single_image(image_input=image1)
-    test.detect_single_image(image_input=image2)
-    test.detect_single_image(image_input=image3)
-    test.detect_single_image(image_input=image4)
-    detect_images_in_dir_to_json(tester=test,
-                                 image_dir=r'D:\Data\deeplearning\datasets\Anti-UAV\demo\fused_rgb_gap2',
-                                 output_json_path = r'D:\Data\deeplearning\datasets\Anti-UAV\demo\detect_result.json'
-)
+    test.detect_single_video(data_dir)
+

@@ -9,7 +9,7 @@ from src.nets.retinaface import Retinaface
 from src.utils.anchor import CustomAnchors
 from src.utils.loss import CustomLoss
 
-from src.data.datamodule import DataModule  # 请替换成你的实际文件名和路径
+from src.data.datamodule import DataModule
 
 # 默认配置
 cfg_trainer_default = {
@@ -67,14 +67,18 @@ class Trainer:
         self.model.eval()
         val_loss, val_loc, val_conf = 0, 0, 0
         with torch.no_grad():
-            for images, targets in self.val_loader:
+            for i, (images, targets) in enumerate(self.val_loader):  # 加入 enumerate
                 images = torch.from_numpy(images).float().to(self.device)
                 targets = [torch.from_numpy(ann).float().to(self.device) for ann in targets]
 
                 out = self.model(images)
                 loss_l, loss_c = self.criterion(
                     [out['bbox'], out['cls']], self.anchors, targets)
-                loss = 2 * loss_l + loss_c
+                loss = loss_l + loss_c
+
+                if torch.isinf(loss):
+                    print(f"[Warning] Loss is infinite at Step {i + 1}. Skipping this batch.")
+                    continue
 
                 val_loss += loss.item()
                 val_loc += loss_l.item()
@@ -103,7 +107,7 @@ class Trainer:
                 out = self.model(images)
                 loss_l, loss_c = self.criterion(
                     [out['bbox'], out['cls']], self.anchors, targets)
-                loss = 2 * loss_l + 2 * loss_c
+                loss = loss_l + loss_c
 
                 if torch.isinf(loss):
                     print(f"[Warning] Loss is inf at Epoch {epoch + 1}, Step {i + 1}. Skipping backward and optimizer step.")
@@ -127,7 +131,7 @@ class Trainer:
             avg_conf = total_conf / len(self.train_loader)
 
             print(f"[Epoch {epoch + 1}] Train - Avg Loss: {avg_loss:.4f} "
-                  f"(Loc: {avg_loc:.4f}, Conf: {avg_conf:.4f}")
+                  f"(Loc: {avg_loc:.4f}, Conf: {avg_conf:.4f})")
 
             avg_val_loss = self.validate()
 

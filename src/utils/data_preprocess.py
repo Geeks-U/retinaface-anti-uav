@@ -46,7 +46,12 @@ def convert_all_videos_to_frames(root_dir):
     print("全部视频处理完成。")
 
 
-def generate_triplet_sample(samples: list, frame_gap: int=2):
+def generate_triplet_sample(samples: list, frame_gap: int=2, mode: str='train'):
+    # 测试阶段数据填充
+    if mode != 'train':
+        first_sample = samples[0][0]
+        samples[0][:0] = [copy.deepcopy(first_sample) for _ in range(2 * frame_gap)]
+
     triplet_samples = []
     for v in samples:
         frame_start_index = 2 * frame_gap
