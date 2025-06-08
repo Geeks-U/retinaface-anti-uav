@@ -107,7 +107,7 @@ class Trainer:
                 out = self.model(images)
                 loss_l, loss_c = self.criterion(
                     [out['bbox'], out['cls']], self.anchors, targets)
-                loss = loss_l + loss_c
+                loss = 2 * loss_l + loss_c
 
                 if torch.isinf(loss):
                     print(f"[Warning] Loss is inf at Epoch {epoch + 1}, Step {i + 1}. Skipping backward and optimizer step.")
