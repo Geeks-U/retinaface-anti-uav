@@ -52,7 +52,10 @@ if __name__ == '__main__':
         'input_image_size': [640, 640]
     }
 
-    data_dir = r'D:\Data\deeplearning\datasets\Anti-UAV\val\20190925_152412_1_3'
+    # 大目标检测缺陷
+    # r'D:\Data\deeplearning\datasets\Anti-UAV\val\20190926_141816_1_9'
+
+    data_dir = r'D:\Data\deeplearning\datasets\Anti-UAV\val\20190926_103046_1_2'
     test = Tester(cfg_tester=cfg_tester)
     test.detect_single_video(data_dir)
 
