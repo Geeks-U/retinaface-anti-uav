@@ -8,7 +8,7 @@ from PIL import Image
 
 from src.data.datamodule import DataModule
 from src.nets.retinaface import Retinaface
-from src.utils.anchor import CustomAnchors, calc_raw_bbox, calc_raw_landm, non_max_suppression
+from src.utils.anchor import CustomAnchors, calc_raw_bbox, calc_raw_centroid, non_max_suppression
 
 
 cfg_test_default = {
@@ -39,62 +39,8 @@ class Tester:
         self.model.to(self.device)
         self.model.eval()
 
-    def detect_single_image(self, image_input, return_image: bool = False):
-        if isinstance(image_input, str):
-            image = Image.open(image_input).convert('RGB')
-        elif isinstance(image_input, Image.Image):
-            image = image_input.convert('RGB')
-        else:
-            raise TypeError("image_input must be a file path or PIL.Image.Image")
-
-        old_image = np.array(image).copy()
-        img_w, img_h = image.size
-
-        with torch.no_grad():
-            image_resized = image.resize(self.cfg['input_image_size'], Image.BICUBIC)
-            image_np = np.array(image_resized, dtype=np.float32)
-
-            image_tensor = torch.from_numpy(
-                (image_np - np.array([127.5, 127.5, 127.5], dtype=np.float32)).transpose(2, 0, 1)
-            ).unsqueeze(0).float().to(self.device)
-
-            outputs = self.model(image_tensor)
-            bbox = calc_raw_bbox(outputs['bbox'].squeeze(0), self.anchors, self.cfg['variance'])
-            cls = F.softmax(outputs['cls'], dim=-1).squeeze(0)[:, 1:2]
-
-            bbox_cls = torch.cat([bbox, cls], dim=-1)
-            bbox_cls = non_max_suppression(bbox_cls, self.cfg['confidence'])
-            if len(bbox_cls) <= 0:
-                return (old_image, []) if return_image else []
-
-        # 还原到原图尺寸
-        bbox_cls[:, :4] *= ([img_w, img_h] * 2)
-
-        boxes_with_scores = []
-
-        for b in bbox_cls:
-            score = float(b[4])
-            b = list(map(int, b[:4]))
-            boxes_with_scores.append((b, score))
-            if return_image:
-                text = f"{score:.4f}"
-                cv2.rectangle(old_image, (b[0], b[1]), (b[2], b[3]), (0, 0, 255), 2)
-                cv2.putText(old_image, text, (b[0], b[1] + 12), cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255, 255))
-
-        if return_image:
-            return old_image, boxes_with_scores
-        else:
-            # 只展示
-            for b, score in boxes_with_scores:
-                text = f"{score:.4f}"
-                cv2.rectangle(old_image, (b[0], b[1]), (b[2], b[3]), (0, 0, 255), 2)
-                cv2.putText(old_image, text, (b[0], b[1] + 12), cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255, 255))
-            cv2.imshow("Detection Result", cv2.cvtColor(old_image, cv2.COLOR_RGB2BGR))
-            cv2.waitKey(0)
-            cv2.destroyAllWindows()
-            return boxes_with_scores
-
     def detect_single_video(self, data_dir, orig_img_size=[512, 640], output_json_path=None):
+        h, w = orig_img_size
         # 使用 Lightning DataModule 来加载数据
         self.datamodule = DataModule(cfg_datamodule={'batch_size': 4})
         self.datamodule.setup(stage='test',
@@ -106,21 +52,28 @@ class Tester:
         frames_pre = []
         for i, (images, targets) in enumerate(self.test_loader):
             images = torch.from_numpy(images).float().to(self.device)
-            outputs = self.model(images)
+
             # outputs['bbox'].shape = torch.Size([B, 37800, 4])
+            # outputs['centroid'].shape = torch.Size([B, 37800, 2])
             # outputs['cls'].shape = torch.Size([B, 37800, 2])
+            outputs = self.model(images)
+
             bbox = calc_raw_bbox(outputs['bbox'], self.anchors, self.cfg['variance'])
-            h, w = orig_img_size
             scale = torch.tensor([w, h, w, h], dtype=bbox.dtype, device=bbox.device)
             bbox = bbox * scale
 
-            cls = cls = F.softmax(outputs['cls'], dim=-1)[:, :, 1:2]
-            bbox_cls = torch.cat([bbox, cls], dim=-1)
-            nms_bbox_cls = non_max_suppression(bbox_cls, self.cfg['confidence'])
-            for b_c in nms_bbox_cls:
+            centroid = calc_raw_centroid(outputs['centroid'], self.anchors, self.cfg['variance'])
+            scale = torch.tensor([w, h], dtype=bbox.dtype, device=bbox.device)
+            centroid = centroid * scale
+
+            cls = F.softmax(outputs['cls'], dim=-1)[:, :, 1:2]
+
+            bbox_centroid_cls = torch.cat([bbox, centroid, cls], dim=-1)
+            nms_bbox_centroid_cls = non_max_suppression(bbox_centroid_cls, self.cfg['confidence'])
+            for b_c in nms_bbox_centroid_cls:
                 frame_pre = []
                 if b_c.shape[0] == 0:
-                    frame_pre.append([0,0,0,0,0])
+                    frame_pre.append([0, 0, 0, 0, 0, 0, 0])
                 else:
                     for i in range(b_c.shape[0]):
                         frame_pre.append(b_c[i].tolist())
@@ -141,14 +94,12 @@ class Tester:
 
         return
 
-import cv2
-import os
 
 def save_video_from_frames(img_paths, bbox_list, output_path='output.mp4', orig_img_size=(512, 640), fps=10):
     """
-    将图片和对应的预测框可视化并合成为视频
+    将图片和对应的预测框（包含质心）可视化并合成为视频
     :param img_paths: 图片路径列表
-    :param bbox_list: 每帧的预测框列表（每个元素为N×5的列表[x1, y1, x2, y2, score]）
+    :param bbox_list: 每帧的预测框列表（每个元素为 [x1, y1, x2, y2, cx, cy, score]）
     :param output_path: 输出视频路径
     :param orig_img_size: 原始图像尺寸 (height, width)
     :param fps: 视频帧率
@@ -167,12 +118,20 @@ def save_video_from_frames(img_paths, bbox_list, output_path='output.mp4', orig_
         img = cv2.resize(img, (w, h))
 
         for box in bboxes:
-            x1, y1, x2, y2, score = box
-            if score < 0.1:  # 可以过滤低置信度框
+            x1, y1, x2, y2, cx, cy, score = box
+            if score < 0.1:  # 过滤低置信度框
                 continue
+
+            # 绘制框
             color = (0, 255, 0)
             cv2.rectangle(img, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
-            cv2.putText(img, f"{score:.2f}", (int(x1), int(y1) - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+
+            # 显示置信度
+            cv2.putText(img, f"{score:.2f}", (int(x1), int(y1) - 5),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+
+            # 绘制质心
+            cv2.circle(img, (int(cx), int(cy)), 3, (0, 0, 255), -1)
 
         video_writer.write(img)
 

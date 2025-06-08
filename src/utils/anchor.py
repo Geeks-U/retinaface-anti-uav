@@ -116,7 +116,7 @@ def iou_corner_boxes(corner_box0, corner_box1):
 
 # center_anchors为中心锚框，corner_box_t为边角锚框, 数据单位均为percent
 # prioranchor和真实anchor之间的匹配，给每个prior都找一个真实anchor
-def match_center_anchor_to_gt_box_percent(center_anchors, corner_box_t, score_t, threshold=0.35, variances=[0.1, 0.2]):
+def match_center_anchor_to_gt_box_percent(center_anchors, corner_box_t, centroid_t, score_t, threshold=0.35, variances=[0.1, 0.2]):
     # (true, prior)iou矩阵计算, iou最大值为1
     ious_tp = iou_corner_boxes(corner_box_t, box_center_to_corner(center_anchors))
 
@@ -140,6 +140,8 @@ def match_center_anchor_to_gt_box_percent(center_anchors, corner_box_t, score_t,
     match_box_t = corner_box_t[best_truth_index]
     # 获取每个先验框对应的最好的真实框的标签 [len(center_anchors),1], 1表示有人脸并且有特征点，-1表示有人脸无特征点
     match_label_t = score_t[best_truth_index]
+    # 获取每个先验框对应的最好的真实框的特征点 [len(center_anchors),10]
+    match_centroid_t = centroid_t[best_truth_index]
 
     # 将iou<阈值的box设为背景, 0表示为背景
     match_label_t[best_truth_iou < threshold] = 0
@@ -148,8 +150,13 @@ def match_center_anchor_to_gt_box_percent(center_anchors, corner_box_t, score_t,
     # match_box_t =  (Δ + 1) * prior_box
     # Δ = (match_box_t - prior_box) / prior_box, Δ就相当于一个伸缩比例
     box_target = calc_target_bbox(match_box_t, center_anchors, variances)
+    # 计算预测锚框centroid和真实锚框centroid的Δ, 网络输出的centroid的目标值便是这个Δ
+    # prior对centroid的初始预测就是prior的中心(prior_x, prior_y)
+    # match_centroid_t = (prior_x, prior_y) + (Δw, Δh) * (prior_w, prior_h)
+    # (Δw, Δh) = (match_centroid_t - (prior_x, prior_y)) / (prior_w, prior_h)
+    centroid_target = calc_target_centroid(match_centroid_t, center_anchors, variances)
 
-    return box_target, match_label_t
+    return box_target, centroid_target, match_label_t
 
 # Δ = (match_box_t - prior_box) / (prior_w, prior_h)
 # 参数为corner框, center框，构造bbox的target
@@ -177,60 +184,70 @@ def calc_raw_bbox(loc, priors, variances):
 
     return boxes
 
-# (Δw, Δh) = (match_landm_t - (prior_x, prior_y)) / (prior_w, prior_h)
-# 参数为center框，构造landm的target
-def calc_target_landm(truth_landm, prior_center_box, variances):
-    truth_landm = torch.reshape(truth_landm, (truth_landm.size(0), 5, 2))
-    priors_cx = prior_center_box[:, 0].unsqueeze(1).expand(truth_landm.size(0), 5).unsqueeze(2)
-    priors_cy = prior_center_box[:, 1].unsqueeze(1).expand(truth_landm.size(0), 5).unsqueeze(2)
-    priors_w = prior_center_box[:, 2].unsqueeze(1).expand(truth_landm.size(0), 5).unsqueeze(2)
-    priors_h = prior_center_box[:, 3].unsqueeze(1).expand(truth_landm.size(0), 5).unsqueeze(2)
+# (Δw, Δh) = (match_centroid_t - (prior_x, prior_y)) / (prior_w, prior_h)
+# 参数为center框，构造centroid的target
+def calc_target_centroid(truth_centroid, prior_center_box, variances):
+    truth_centroid = torch.reshape(truth_centroid, (truth_centroid.size(0), 1, 2))
+    priors_cx = prior_center_box[:, 0].unsqueeze(1).expand(truth_centroid.size(0), 1).unsqueeze(2)
+    priors_cy = prior_center_box[:, 1].unsqueeze(1).expand(truth_centroid.size(0), 1).unsqueeze(2)
+    priors_w = prior_center_box[:, 2].unsqueeze(1).expand(truth_centroid.size(0), 1).unsqueeze(2)
+    priors_h = prior_center_box[:, 3].unsqueeze(1).expand(truth_centroid.size(0), 1).unsqueeze(2)
     prior_center_box = torch.cat([priors_cx, priors_cy, priors_w, priors_h], dim=2)
 
     # 减去中心后除上宽高
-    g_cxcy = truth_landm[:, :, :2] - prior_center_box[:, :, :2]
+    g_cxcy = truth_centroid[:, :, :2] - prior_center_box[:, :, :2]
     g_cxcy /= (variances[0] * prior_center_box[:, :, 2:])
     g_cxcy = g_cxcy.reshape(g_cxcy.size(0), -1)
     return g_cxcy
 
-def calc_raw_landm(pre, priors, variances):
-    landms = torch.cat((priors[:, :2] + pre[:, :2] * variances[0] * priors[:, 2:],
-                        priors[:, :2] + pre[:, 2:4] * variances[0] * priors[:, 2:],
-                        priors[:, :2] + pre[:, 4:6] * variances[0] * priors[:, 2:],
-                        priors[:, :2] + pre[:, 6:8] * variances[0] * priors[:, 2:],
-                        priors[:, :2] + pre[:, 8:10] * variances[0] * priors[:, 2:],
-                        ), dim=1)
-    return landms
+def calc_raw_centroid(pre, priors, variances):
+    """
+    pre: [B, N, 2] 模型预测的质心偏移
+    priors: [N, 4] anchor（格式：[cx, cy, w, h]）
+    variances: [v0, v1] 变异量系数
+    返回: [B, N, 2] 预测出的实际质心坐标
+    """
+    # priors: [N, 4] → 取中心点和宽高
+    priors = priors.unsqueeze(0)  # [1, N, 4] 以便与 batch 匹配
+    prior_center = priors[:, :, :2]     # [1, N, 2]
+    prior_wh     = priors[:, :, 2:]     # [1, N, 2]
+
+    # pre: [B, N, 2]
+    centroids = prior_center + pre * variances[0] * prior_wh  # [B, N, 2]
+    return centroids
 
 import numpy as np
 from torchvision.ops import nms
 
 def non_max_suppression(detections: torch.Tensor, conf_thres=0.5, nms_thres=0.3):
     """
-    detections: Tensor [B, N, 5] -> (x1, y1, x2, y2, score)
-    return: List[np.ndarray] 每个元素是一个图片的筛选后的结果
+    detections: Tensor [B, N, 7] -> (x1, y1, x2, y2, cx, cy, score)
+    return: List[np.ndarray] 每个元素是一个图片的筛选后的结果，形状为 [M, 7]
     """
-    assert detections.ndim == 3 and detections.shape[2] == 5, "Expect input shape [B, N, 5]"
+    assert detections.ndim == 3 and detections.shape[2] == 7, "Expect input shape [B, N, 7]"
 
     batch_size = detections.shape[0]
     results = []
 
     for b in range(batch_size):
-        detection = detections[b]  # shape: [N, 5]
+        detection = detections[b]  # shape: [N, 7]
 
-        mask = detection[:, 4] >= conf_thres
+        # score 在 index=6
+        mask = detection[:, 6] >= conf_thres
         detection = detection[mask]
 
         if detection.shape[0] == 0:
-            results.append(np.zeros((0, 5), dtype=np.float32))  # 空结果
+            results.append(np.zeros((0, 7), dtype=np.float32))
             continue
 
-        keep = nms(detection[:, :4], detection[:, 4], nms_thres)
-        best_box = detection[keep]
+        # NMS 用的是框的前四个坐标（x1, y1, x2, y2）和置信度 score
+        keep = nms(detection[:, :4], detection[:, 6], nms_thres)
+        best_box = detection[keep]  # shape: [M, 7]
 
         results.append(best_box.detach().cpu().numpy())
 
-    return results  # list of numpy arrays of shape [M, 5]
+    return results  # list of np.ndarray, each of shape [M, 7]
+
 
 # 测试代码 --------------------------------------------------
 if __name__ == "__main__":

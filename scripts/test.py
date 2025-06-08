@@ -46,7 +46,7 @@ if __name__ == '__main__':
     # 回到项目根目录 （假设脚本在 scripts 目录下）
     base_dir = os.path.dirname(os.path.dirname(current_file))
 
-    model_path = os.path.join(base_dir, 'weights', 'model_20250608_130432_best.pth')
+    model_path = os.path.join(base_dir, 'weights', 'model_20250608_185248_last.pth')
     cfg_tester = {
         'model_path': model_path,
         'input_image_size': [640, 640]

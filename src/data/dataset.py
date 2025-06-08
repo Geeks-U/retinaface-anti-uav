@@ -93,9 +93,11 @@ class CustomDataset(Dataset):
                     bbox = annotations['gt_rect'][index] if score != 0 else [0, 0, 0, 0]
                     bbox[2] += bbox[0]
                     bbox[3] += bbox[1]
+                    # 质心构造 使用框中心替代
+                    x_centroid, y_centroid = (bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2
 
                     # 保存样本信息
-                    sequence_frames.append([img_path, [[*bbox, score]]])
+                    sequence_frames.append([img_path, [[*bbox, x_centroid, y_centroid, score]]])
                 sequences.append(sequence_frames)
             res = sequences
 
@@ -116,9 +118,10 @@ class CustomDataset(Dataset):
                 # 构造对应帧的标注
                 score = 0
                 bbox = [0, 0, 0, 0]
+                x_centroid, y_centroid = 0, 0
 
                 # 保存样本信息
-                sequence_frames.append([img_path, [[*bbox, score]]])
+                sequence_frames.append([img_path, [[*bbox, x_centroid, y_centroid, score]]])
             res = [sequence_frames]
 
         # 时序数据构造
@@ -159,13 +162,13 @@ class CustomDataset(Dataset):
         # 融合三帧图像为通道维
         fused_img = np.stack([img_resize[0], img_resize[1], img_resize[2]], axis=0)
 
-        # 处理标签 无目标图片(0, 0, 0, 0, 0)作为负样本训练
+        # 处理标签 无目标图片(0, 0, 0, 0, 0, 0, 0)作为负样本训练
         bbox_cls = np.array(label, dtype=np.float32)
         mask = (bbox_cls[:, 2] - bbox_cls[:, 0] >= 0) & (bbox_cls[:, 3] - bbox_cls[:, 1] >= 0)
         bbox_cls = bbox_cls[mask]
-        bbox_cls[:, [0, 2]] /= orig_w
-        bbox_cls[:, [1, 3]] /= orig_h
-        bbox_cls[:, 4] = np.clip(bbox_cls[:, 4], 0, 1)
+        bbox_cls[:, [0, 2, 4]] /= orig_w
+        bbox_cls[:, [1, 3, 5]] /= orig_h
+        bbox_cls[:, :6] = np.clip(bbox_cls[:, :6], 0, 1)
 
         # 图像增强
         img, label = self.enhance(fused_img, bbox_cls)
@@ -201,8 +204,9 @@ def detection_collate(batch):
 
 if __name__ == '__main__':
     dataset = CustomDataset({
-        'mode': 'test',
-        'data_dir': r'D:\Data\deeplearning\datasets\Anti-UAV\test\20190925_111757_1_2'
+        'mode': 'train',
+        'data_dir': r'D:\Data\deeplearning\datasets\Anti-UAV\test'
     })
-    i, l = dataset[0]
-    print(i.shape, l)
+    for i in range(1):
+        img, l = dataset[i]
+        print(img.shape, l)

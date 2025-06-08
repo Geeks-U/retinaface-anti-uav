@@ -33,11 +33,11 @@ class ConvHead(nn.Module):
 # 对于每个 anchor：
 # bbox: 4坐标（x, y, w, h）
 # cls: 2分类（人脸/非人脸）
-# ldm: 5个关键点 * 2坐标 (x, y)
+# centroid: 1个关键点 * 2坐标 (x, y)
 cfg_default = {
     'in_channels': 256,
-    'out_names': ['bbox' , 'cls', 'ldm'],
-    'out_channels': [4, 2, 10],
+    'out_names': ['bbox' , 'cls', 'centroid'],
+    'out_channels': [4, 2, 2],
     'num_anchor': 2
 }
 
@@ -51,23 +51,28 @@ class ShareHead(nn.Module):
 
         self.bbox_head = ConvHead(self.cfg['in_channels'], self.cfg['num_anchor'] * self.cfg['out_channels'][0], self.cfg['num_anchor'])
         self.cls_head = ConvHead(self.cfg['in_channels'], self.cfg['num_anchor'] * self.cfg['out_channels'][1], self.cfg['num_anchor'])
+        self.centroid_head = ConvHead(self.cfg['in_channels'], self.cfg['num_anchor'] * self.cfg['out_channels'][2], self.cfg['num_anchor'])
 
     def forward(self, x):
         # features: List[Tensor], 每层 FPN 特征图
         bbox_outputs = []
         cls_outputs = []
+        centroid_outputs = []
 
         for key in ['high', 'mid', 'low']:
             bbox_outputs.append(self.bbox_head(x[key]))
             cls_outputs.append(self.cls_head(x[key]))
+            centroid_outputs.append(self.centroid_head(x[key]))
 
         # 使用 torch.cat 对每个输出进行拼接，这里假设在 dim=1（即特征维度）上拼接
         bbox_outputs = torch.cat(bbox_outputs, dim=1)
         cls_outputs = torch.cat(cls_outputs, dim=1)
+        centroid_outputs = torch.cat(centroid_outputs, dim=1)
 
         return {
             self.cfg['out_names'][0]: bbox_outputs,
-            self.cfg['out_names'][1]: cls_outputs
+            self.cfg['out_names'][1]: cls_outputs,
+            self.cfg['out_names'][2]: centroid_outputs
             }
 
 def build_head(model_name: str, cfg_head=None) -> nn.Module:

@@ -65,16 +65,16 @@ class Trainer:
 
     def validate(self):
         self.model.eval()
-        val_loss, val_loc, val_conf = 0, 0, 0
+        val_loss, val_loc, val_conf, val_ct = 0, 0, 0, 0
         with torch.no_grad():
             for i, (images, targets) in enumerate(self.val_loader):  # 加入 enumerate
                 images = torch.from_numpy(images).float().to(self.device)
                 targets = [torch.from_numpy(ann).float().to(self.device) for ann in targets]
 
                 out = self.model(images)
-                loss_l, loss_c = self.criterion(
-                    [out['bbox'], out['cls']], self.anchors, targets)
-                loss = loss_l + loss_c
+                loss_l, loss_c, loss_ct = self.criterion(
+                    [out['bbox'], out['cls'], out['centroid']], self.anchors, targets)
+                loss = loss_l + loss_c + loss_ct
 
                 if torch.isinf(loss):
                     print(f"[Warning] Loss is infinite at Step {i + 1}. Skipping this batch.")
@@ -83,20 +83,22 @@ class Trainer:
                 val_loss += loss.item()
                 val_loc += loss_l.item()
                 val_conf += loss_c.item()
+                val_ct += loss_ct.item()
 
         avg_val_loss = val_loss / len(self.val_loader)
         avg_val_loc = val_loc / len(self.val_loader)
         avg_val_conf = val_conf / len(self.val_loader)
+        avg_val_ct = val_ct / len(self.val_loader)
 
         print(f"[Validation] Avg Loss: {avg_val_loss:.4f} "
-              f"(Loc: {avg_val_loc:.4f}, Conf: {avg_val_conf:.4f})")
+              f"(Loc: {avg_val_loc:.4f}, Conf: {avg_val_conf:.4f}, Cti: {avg_val_ct:.4f})")
 
         return avg_val_loss
 
     def train(self):
         for epoch in range(self.num_epochs):
             self.model.train()
-            total_loss, total_loc, total_conf = 0, 0, 0
+            total_loss, total_loc, total_conf, total_ct = 0, 0, 0, 0
 
             for i, (images, targets) in enumerate(self.train_loader):
                 images = torch.from_numpy(images).float().to(self.device)
@@ -105,9 +107,9 @@ class Trainer:
                 self.optimizer.zero_grad()
 
                 out = self.model(images)
-                loss_l, loss_c = self.criterion(
-                    [out['bbox'], out['cls']], self.anchors, targets)
-                loss = 2 * loss_l + loss_c
+                loss_l, loss_c, loss_ct = self.criterion(
+                    [out['bbox'], out['cls'], out['centroid']], self.anchors, targets)
+                loss = 2 * loss_l + loss_c + loss_ct
 
                 if torch.isinf(loss):
                     print(f"[Warning] Loss is inf at Epoch {epoch + 1}, Step {i + 1}. Skipping backward and optimizer step.")
@@ -119,19 +121,21 @@ class Trainer:
                 total_loss += loss.item()
                 total_loc += loss_l.item()
                 total_conf += loss_c.item()
+                total_ct += loss_ct.item()
 
                 if (i + 1) % 10 == 0:
                     print(f"Epoch [{epoch + 1}/{self.num_epochs}], Step [{i + 1}/{len(self.train_loader)}], "
-                          f"Loss: {loss.item():.4f}, Loc: {loss_l.item():.4f}, Cls: {loss_c.item():.4f}")
+                          f"Loss: {loss.item():.4f}, Loc: {loss_l.item():.4f}, Cls: {loss_c.item():.4f}, Cti: {loss_ct.item():.4f}")
 
             self.scheduler.step()
 
             avg_loss = total_loss / len(self.train_loader)
             avg_loc = total_loc / len(self.train_loader)
             avg_conf = total_conf / len(self.train_loader)
+            avg_ct = total_ct / len(self.train_loader)
 
             print(f"[Epoch {epoch + 1}] Train - Avg Loss: {avg_loss:.4f} "
-                  f"(Loc: {avg_loc:.4f}, Conf: {avg_conf:.4f})")
+                  f"(Loc: {avg_loc:.4f}, Cls: {avg_conf:.4f}, Cti: {avg_ct:.4f})")
 
             avg_val_loss = self.validate()
 

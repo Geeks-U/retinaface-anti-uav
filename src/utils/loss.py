@@ -35,7 +35,7 @@ class CustomLoss(nn.Module):
         #--------------------------------------------------------------------#
         #   取出预测结果的三个值：框的回归信息，置信度，人脸关键点的回归信息
         #--------------------------------------------------------------------#
-        loc_data, conf_data = predictions
+        loc_data, conf_data, centroid_data = predictions
         #--------------------------------------------------#
         #   计算出batch_size和先验框的数量
         #--------------------------------------------------#
@@ -46,11 +46,13 @@ class CustomLoss(nn.Module):
         #   创建一个tensor进行处理
         #--------------------------------------------------#
         loc_t   = torch.Tensor(num, num_priors, 4)
+        cti_t  = torch.LongTensor(num, num_priors, 2)
         conf_t  = torch.LongTensor(num, num_priors)
 
         for idx in range(num):
             target = targets[idx]
             truths = target[:, :4].data
+            centroid = target[:, 4:-1].data
             labels = target[:, -1].data
 
             # 判断是否全是无效框（宽高<=0 或全零）
@@ -63,10 +65,11 @@ class CustomLoss(nn.Module):
 
             # 有有效框，挑选有效框匹配
             truths = truths[valid_mask]
+            centroid = centroid[valid_mask]
             labels = labels[valid_mask]
 
-            loc_t[idx], conf_t[idx] = match_center_anchor_to_gt_box_percent(
-                priors.data, truths, labels, self.threshold, self.variance
+            loc_t[idx], cti_t[idx], conf_t[idx] = match_center_anchor_to_gt_box_percent(
+                priors.data, truths, centroid, labels, self.threshold, self.variance
             )
 
         #--------------------------------------------------#
@@ -78,6 +81,7 @@ class CustomLoss(nn.Module):
         if self.cuda:
             loc_t = loc_t.cuda()
             conf_t = conf_t.cuda()
+            cti_t = cti_t.cuda()
             zeros = zeros.cuda()
 
         # label为1表示人脸且含有关键点，-1表示人脸且没有关键点(在dataset中初始化)
@@ -89,6 +93,13 @@ class CustomLoss(nn.Module):
         loc_p = loc_data[pos_idx].view(-1, 4)
         loc_t = loc_t[pos_idx].view(-1, 4)
         loss_l = F.smooth_l1_loss(loc_p, loc_t, reduction='sum')
+
+        # 计算关键点loss时，就挑出含有关键点(label=1)的数据，然后进行损失计算
+        pos1 = conf_t > zeros
+        pos_idx1 = pos1.unsqueeze(pos1.dim()).expand_as(centroid_data)
+        cti_p = centroid_data[pos_idx1].view(-1, 2)
+        cti_t = cti_t[pos_idx1].view(-1, 2)
+        loss_cti = F.smooth_l1_loss(cti_p, cti_t, reduction='sum')
 
         #--------------------------------------------------#
         #   batch_conf  (num * num_priors, 2)
@@ -141,4 +152,9 @@ class CustomLoss(nn.Module):
         # num_neg >> num_pos，如果使用和(num_pos+num_neg)来归一化会使得cls_loss较小，正样本的cls学习困难
         loss_c /= N
 
-        return loss_l, loss_c
+        num_pos_cti = pos1.long().sum(1, keepdim=True)
+        # 基于label=1的样本
+        N1 = max(num_pos_cti.data.sum().float(), 1)
+        loss_cti /= N1
+
+        return loss_l, loss_c, loss_cti
