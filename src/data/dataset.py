@@ -43,7 +43,7 @@ class DatasetConfig(TypedDict):
 # 默认配置，data_dir用字符串路径
 cfg_dataset_default: DatasetConfig = {
     'mode': 'train',
-    'data_dir': r'D:\Data\deeplearning\datasets\Anti-UAV\test',
+    'data_dir': r'D:\Data\deeplearning\datasets\Anti-UAV\train',
     'input_image_size': [320, 320],
     'frame_gap': 2,
     'augment': True,
@@ -179,8 +179,8 @@ class CustomDataset(Dataset):
         # 通道差分
         diff_0 = img[1] - img[0]
         diff_1 = img[2] - img[1]
-        diff_2 = img[2]
-        img = np.stack([diff_0, diff_1, diff_2], axis=0)
+        diff_2 = img[2] - img[0]
+        img = np.stack([diff_0, diff_1, diff_2, img[0], img[1], img[2]], axis=0)
 
         return img, label
 

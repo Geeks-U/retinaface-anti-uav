@@ -6,7 +6,7 @@ import pytorch_lightning as pl
 from src.data.dataset import CustomDataset, detection_collate
 
 cfg_datamodule_default = {
-    'val_split': 0.1,
+    'val_split': 0.05,
     'batch_size': 32,
     'num_workers': 2,
     'pin_memory': True

@@ -9,7 +9,7 @@ cfg_anchor_default = {
     'num_fpn_feature_layers': 3,
     'backbone_fpn_strides': [8, 16, 32],
     'num_anchor_per_pixel': 2,
-    'anchor_ratios_per_level': [[4, 8], [16, 32], [64, 128]],
+    'anchor_ratios_per_level': [[2, 4], [8, 16], [32, 64]],
     'clip': True
 }
 

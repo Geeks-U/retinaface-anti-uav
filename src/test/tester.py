@@ -31,10 +31,14 @@ class Tester:
             print('CUDA is not available.')
 
         self.anchors = CustomAnchors(
-            cfg_anchor={'input_image_size': self.cfg['input_image_size']}
+            cfg_anchor={'input_image_size': self.cfg['input_image_size'],
+                        'num_anchor_per_pixel': self.cfg['num_anchor_per_pixel'],
+                        'anchor_ratios_per_level': self.cfg['anchor_ratios_per_level']}
         ).get_center_anchors().to(self.device)
 
-        self.model = Retinaface()
+        self.model = Retinaface(cfg_model={
+            'num_anchor': self.cfg['num_anchor_per_pixel']
+        })
         self.model.load_state_dict(torch.load(self.cfg['model_path']))
         self.model.to(self.device)
         self.model.eval()

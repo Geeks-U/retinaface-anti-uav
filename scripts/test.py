@@ -46,16 +46,26 @@ if __name__ == '__main__':
     # 回到项目根目录 （假设脚本在 scripts 目录下）
     base_dir = os.path.dirname(os.path.dirname(current_file))
 
-    model_path = os.path.join(base_dir, 'weights', 'model_20250608_194258_best.pth')
+    model_path = os.path.join(base_dir, 'weights', 'model_20250609_084229_best.pth')
     cfg_tester = {
         'model_path': model_path,
-        'input_image_size': [640, 640]
+        'input_image_size': [352, 352],
+        'num_anchor_per_pixel': 3,
+        'anchor_ratios_per_level': [[4, 8, 16], [32, 48, 64], [80, 96, 128]]
     }
 
-    # 大目标检测缺陷
-    # r'D:\Data\deeplearning\datasets\Anti-UAV\val\20190926_141816_1_9'
+    # 大目标检测
+    # r'D:\Data\deeplearning\datasets\Anti-UAV\train\20190925_130434_1_3'
 
-    data_dir = r'D:\Data\deeplearning\datasets\Anti-UAV\val\20190926_103046_1_2'
+    # 小目标检测
+    # D:\Data\deeplearning\datasets\Anti-UAV\train\20190925_101846_1_8
+    # D:\Data\deeplearning\datasets\Anti-UAV\train\20190925_101846_1_7
+
+    # 弱目标检测
+    # D:\Data\deeplearning\datasets\Anti-UAV\train\20190925_131530_1_7
+    # D:\Data\deeplearning\datasets\Anti-UAV\val\20190926_103046_1_2
+
+    data_dir = r'D:\Data\deeplearning\datasets\Anti-UAV\train\20190925_130434_1_3'
     test = Tester(cfg_tester=cfg_tester)
     test.detect_single_video(data_dir)
 

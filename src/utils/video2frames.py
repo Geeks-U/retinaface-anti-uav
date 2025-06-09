@@ -46,5 +46,5 @@ def batch_video_to_frames(root_dir):
 
 
 if __name__ == "__main__":
-    root_dir = r'D:\Data\deeplearning\datasets\Anti-UAV\val'
+    root_dir = r'D:\Data\deeplearning\datasets\Anti-UAV\train'
     batch_video_to_frames(root_dir)

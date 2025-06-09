@@ -20,7 +20,9 @@ class Retinaface(nn.Module):
         self.backbone = build_backbone(model_name='mobilenetv2')
         self.fpn = build_fpn(model_name='fpn')
         self.ssh = build_ssh(model_name='ssh')
-        self.head = build_head(model_name='sharehead')
+        self.head = build_head(model_name='sharehead', cfg_head={
+            'num_anchor': self.cfg['num_anchor']
+        })
 
     def forward(self, x):
         output_backbone = self.backbone(x)

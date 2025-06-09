@@ -38,8 +38,13 @@ class Trainer:
 
         self.weights_save_dir.mkdir(parents=True, exist_ok=True)
 
-        self.model = Retinaface().to(self.device)
-        self.anchors = CustomAnchors(cfg_anchor={'input_image_size': self.input_image_size}).get_center_anchors().to(self.device)
+        self.model = Retinaface(cfg_model={
+            'num_anchor': self.cfg['num_anchor_per_pixel']
+        }).to(self.device)
+        self.anchors = CustomAnchors(cfg_anchor={'input_image_size': self.cfg['input_image_size'],
+                        'num_anchor_per_pixel': self.cfg['num_anchor_per_pixel'],
+                        'anchor_ratios_per_level': self.cfg['anchor_ratios_per_level']}
+                                     ).get_center_anchors().to(self.device)
         print("锚框形状: ", self.anchors.size())
 
         self.criterion = CustomLoss()
@@ -52,8 +57,8 @@ class Trainer:
         self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=10, gamma=0.1)
 
         # 使用 Lightning DataModule 来加载数据
-        self.datamodule = DataModule()
-        self.datamodule.setup(stage='fit', cfg_fit={'input_image_size': self.input_image_size})  # 生成数据集和拆分
+        self.datamodule = DataModule(cfg_datamodule={'batch_size': self.cfg['batch_size']})
+        self.datamodule.setup(stage='fit', cfg_fit={'input_image_size': self.input_image_size, 'data_dir': self.cfg['data_dir']})  # 生成数据集和拆分
         self.train_loader = self.datamodule.train_dataloader()
         self.val_loader = self.datamodule.val_dataloader()
 
